@@ -364,6 +364,7 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelCheckpoint', text='Checkpoint')
 
+		# Move to "Refine" panel and simplify names
 		# Refine Mode
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelRefineMode', text='Refine Mode')
@@ -371,6 +372,57 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 		# Refine Pixels
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_refineSamplePixels', text='Refine Pixels')
+
+		# Refine Threshold
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_refineThreshold', text='Refine Threshold')
+
+		# Refine Kernel Size
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_refineKernelSize', text='Kernel Size')
+
+		# Video SRC
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoSource', text='Video File')
+
+		# Video BGR
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoBGR', text='Background Image')
+
+		# Video Target BGR
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoTargetBGR', text='Video Target BGR')
+
+		# Device
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_device', text='Device')
+
+		# Preprocess Alignment
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_preprocessAlignment', text='Preprocess Alignment')
+
+		# Output Directory
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputDirectory', text='Output Directory')
+
+		# Output Types
+		row = layout.row()
+		row.label(text='Output Layers:')
+
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputCom', text='Composite')
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputPha', text='Alpha Matte')
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFgr', text='Foreground')
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputErr', text='Error')
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputRef', text='Reference')
+
+		# Output Format
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFormat', text='Format')
 
 
 		row = layout.row()
@@ -384,23 +436,6 @@ classes = ()
 
 classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelHelloWorld)
 classes_functionality = (MATTECREATOR_OT_helloWorld,)
-
-'''
-parser.add_argument('--model-refine-threshold', type=float, default=0.7)
-parser.add_argument('--model-refine-kernel-size', type=int, default=3)
-
-parser.add_argument('--video-src', type=str, required=True)
-parser.add_argument('--video-bgr', type=str, required=True)
-parser.add_argument('--video-target-bgr', type=str, default=None, help="Path to video onto which to composite the output (default to flat green)")
-parser.add_argument('--video-resize', type=int, default=None, nargs=2)
-
-parser.add_argument('--device', type=str, choices=['cpu', 'cuda'], default='cuda')
-parser.add_argument('--preprocess-alignment', action='store_true')
-
-parser.add_argument('--output-dir', type=str, required=True)
-parser.add_argument('--output-types', type=str, required=True, nargs='+', choices=['com', 'pha', 'fgr', 'err', 'ref'])
-parser.add_argument('--output-format', type=str, default='video', choices=['video', 'image_sequences'])
-'''
 
 def register():
 
@@ -417,6 +452,33 @@ def register():
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelCheckpoint = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_modelCheckpoint') # Replace with file selector with filter glob, need to make persistent too
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelRefineMode = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelRefineMode', items=[('full', 'full', ''), ('sampling', 'sampling', ''), ('thresholding', 'thresholding', '')])
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineSamplePixels = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_refineSamplePixels', soft_min=10000, soft_max=320000, default=80000)	
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineThreshold = bpy.props.FloatProperty(name='MATTECREATOR_HYPERPARAM_refineThreshold', soft_min=0.1, soft_max=0.9, default=0.7)
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineKernelSize = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_refineKernelSize', soft_min=2, soft_max=5, default=3)
+
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoSource = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_videoSource') # Replace with file picker
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoBGR = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_videoBGR') # Replace with file picker
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoTargetBGR = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_videoTargetBGR') # Replace with file picker
+
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_device = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_device', items=[('cuda', 'cuda (GPU)', ''), ('cpu', 'cpu', '')], default='cuda')
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_preprocessAlignment = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_preprocessAlignment', default=False)
+
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputDirectory = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_outputDirectory')
+
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputCom = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputCom', default=True)
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputPha = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputPha', default=False)
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFgr = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputFgr', default=False)
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputErr = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputErr', default=False)
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputRef = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputRef', default=False)
+
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFormat = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_outputFormat', items=[('video', 'Video', ''), ('image_sequences', 'Image Sequence', '')], default='video')
+
+
+	
+
+	# Possibly Temp
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeX = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_resizeX')
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeY = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_resizeY')
+
 
 def unregister():
 
@@ -431,8 +493,31 @@ def unregister():
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackbone
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelCheckpoint
+
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelRefineMode
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineSamplePixels
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineThreshold
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineKernelSize
+
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoSource
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoBGR
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoTargetBGR
+
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_device
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_preprocessAlignment
+
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputDirectory 
+
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputCom
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputPha
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFgr
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputErr
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputRef
+
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFormat
+
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeX
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeY
 
 if __name__ == '__main__':
 	register()
