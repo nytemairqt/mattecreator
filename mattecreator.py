@@ -102,8 +102,6 @@ def MATTECREATOR_FN_zipDataSet(datasets, transforms=None, assert_equal_length=Fa
 			assert len(datasets[i]) == len(datasets[i - 1]), 'Datasets are not equal in length.'
 
 def MATTECREATOR_FN_helloWorld(self, context):
-
-	MODEL_TYPE = 'mattingrefine' # mattingbase, mattingrefine, mattingbm
 	VIDEO_RESIZE = None
 	PREPROCESS_ALIGNMENT = None
 
@@ -137,7 +135,6 @@ def MATTECREATOR_FN_helloWorld(self, context):
 	h = vid.height
 
 	# Instantiate Writers
-	#pha_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'pha.mp4'), vid.frame_rate, w, h)
 	fgr_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'fgr.mp4'), vid.frame_rate, w, h)
 	com_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'com.mp4'), vid.frame_rate, w, h)
 
@@ -149,11 +146,11 @@ def MATTECREATOR_FN_helloWorld(self, context):
 			src = src.to(precision).to(device, non_blocking=True)
 			bgr = bgr.to(precision).to(device, non_blocking=True)
 
-			if MODEL_TYPE == 'mattingbase':
+			if context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingbase':
 				pha, fgr, err, _ = model(src, bgr)
-			elif MODEL_TYPE == 'mattingrefine':
+			elif context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingrefine':
 				pha, fgr, _, _, err, ref = model(src, bgr)
-			elif MODEL_TYPE == 'mattingbm':
+			elif context.scene.MATTECREATOR_HYPERPARAM_modelType == 'OP3':
 				pha, fgr = model(src, bgr)
 
 			# Add an interface Prop to read current frame
@@ -163,18 +160,6 @@ def MATTECREATOR_FN_helloWorld(self, context):
 			fgr_writer.add_batch(fgr)
 			com_writer.add_batch(com)
 			print(f'Writing frame... {idx}')
-
-	# Unload Video
-	#video.release()
-	#video_out.release()
-
-	#pha_writer.release()
-	#print('Released Writer')
-
-
-	# (Batch, Channels, Height, Width)	
-
-	#pha, fgr = model(src, bgr)[:2]
 
 
 # Classes ---------------------- 
@@ -243,7 +228,7 @@ class MATTECREATOR_CLASS_videoDataset(torch.utils.data.Dataset):
 		if not ret:
 			raise IndexError(f'Idx: {idx} out of length: {len(self)}')
 		img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-		#img = PIL.Image.fromarray(img)
+		#img = PIL.Image.fromarray(img) #DO I NEED THIS????
 		if self.transforms:
 			img = self.transforms(img)
 		return img
@@ -318,12 +303,10 @@ class MATTECREATOR_CLASS_homographicAlignment:
 		bgr = cv2.warpPerspective(bgr, H, (w, h))
 		msk = cv2.warpPerspective(np.ones((h, w)), H, (w, h))
 
-		# For areas that is outside of the background, 
-		# We just copy pixels from the source.
 		bgr[msk != 1] = src[msk != 1]
 
-		src = Image.fromarray(src)
-		bgr = Image.fromarray(bgr)
+		src = PIL.Image.fromarray(src)
+		bgr = PIL.Image.fromarray(bgr)
 
 		return src, bgr		
 
@@ -363,14 +346,35 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 
 	def draw(self, context):
 		layout = self.layout
+
+		# Model Type
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelType', text='Model')
+
+		# Model Backbone
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelBackbone', text='Backbone')
+
+		# Model Backbone Scale
+		row = layout.row()
+		row.label(text='Scale: ')
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelBackboneScale', text='')
+
+		# Model Checkpoint
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelCheckpoint', text='Checkpoint')
+
+		# Refine Mode
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelRefineMode', text='Refine Mode')
+
+		# Refine Pixels
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_refineSamplePixels', text='Refine Pixels')
+
+
 		row = layout.row()
 		row.operator(MATTECREATOR_OT_helloWorld.bl_idname, text='Hello World', icon_value=727)
-
-#--------------------------------------------------------------
-# Register 
-#--------------------------------------------------------------
-
-
 
 #--------------------------------------------------------------
 # Register 
@@ -382,12 +386,6 @@ classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelHelloWorld)
 classes_functionality = (MATTECREATOR_OT_helloWorld,)
 
 '''
-parser.add_argument('--model-type', type=str, required=True, choices=['mattingbase', 'mattingrefine'])
-parser.add_argument('--model-backbone', type=str, required=True, choices=['resnet101', 'resnet50', 'mobilenetv2'])
-parser.add_argument('--model-backbone-scale', type=float, default=0.25)
-parser.add_argument('--model-checkpoint', type=str, required=True)
-parser.add_argument('--model-refine-mode', type=str, default='sampling', choices=['full', 'sampling', 'thresholding'])
-parser.add_argument('--model-refine-sample-pixels', type=int, default=80_000)
 parser.add_argument('--model-refine-threshold', type=float, default=0.7)
 parser.add_argument('--model-refine-kernel-size', type=int, default=3)
 
@@ -404,8 +402,6 @@ parser.add_argument('--output-types', type=str, required=True, nargs='+', choice
 parser.add_argument('--output-format', type=str, default='video', choices=['video', 'image_sequences'])
 '''
 
-#bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType = bpy.props.StringProperty(name="MATTECREATOR_HYPERPARAM_modelType", default="mattingrefine")
-
 def register():
 
 	# Register Classes
@@ -415,7 +411,12 @@ def register():
 		bpy.utils.register_class(c)
 
 	# Hyperparameters
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType = bpy.props.EnumProperty(items=((0, 1), (2, 3)))
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelType', items=[('mattingbase', 'mattingbase', ''), ('mattingrefine', 'mattingrefine', '')])
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackbone = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelBackbone', items=[('resnet101', 'resnet101', ''), ('resnet50', 'resnet50', ''), ('mobilenetv2', 'mobilenetv2', '')]) 
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale = bpy.props.FloatProperty(name='MATTECREATOR_HYPERPARAM_modelBackboneScale', soft_min=0.1, soft_max=1.0, default=0.25)
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelCheckpoint = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_modelCheckpoint') # Replace with file selector with filter glob, need to make persistent too
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelRefineMode = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelRefineMode', items=[('full', 'full', ''), ('sampling', 'sampling', ''), ('thresholding', 'thresholding', '')])
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineSamplePixels = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_refineSamplePixels', soft_min=10000, soft_max=320000, default=80000)	
 
 def unregister():
 
@@ -427,6 +428,11 @@ def unregister():
 
 	# Hyperparamaters
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackbone
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelCheckpoint
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelRefineMode
+	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineSamplePixels
 
 if __name__ == '__main__':
 	register()
