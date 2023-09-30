@@ -42,42 +42,72 @@ bl_info = {
 # Import
 #--------------------------------------------------------------
 
+MATTECREATOR_MISSING_DEPENDENCIES = True
+
 import os
 import bpy
+import sys
+import subprocess
+import platform
+
 import bpy_extras
 import math 
+import importlib 
 from mathutils import Vector
 from bpy_extras.image_utils import load_image
 from bpy_extras import view3d_utils
 from bpy_extras.io_utils import ImportHelper
 
-import torch 
-from torch import nn 
-from torch.utils.data import DataLoader
-import torchvision 
-from torchvision import transforms as T
-from torchvision.transforms import functional as F
+try:
+	import torch 
+	from torch import nn 
+	from torch.utils.data import DataLoader
 
-import numpy as np
-import PIL
-import cv2
-import shutil
+	import torchvision 
+	from torchvision import transforms as T 
+	from torchvision.transforms import functional as F 
+
+	import numpy as np
+	import PIL
+	import cv2
+
+	MATTECREATOR_MISSING_DEPENDENCIES = False
+except: 
+	MATTECREATOR_MISSING_DEPENDENCIES = True
+
 from threading import Thread
 
-
-
-#--------------------------------------------------------------
-# Miscellaneous Functions
-#--------------------------------------------------------------
-
-def MATTECREATOR_FN_contextOverride(area_to_check):
-	return [area for area in bpy.context.screen.areas if area.type == area_to_check][0]
-
-#--------------------------------------------------------------
-# Camera Projection Tools
-#--------------------------------------------------------------		
-
 # Functions ---------------------- 
+
+def MATTECREATOR_FN_getOS():
+	if os.name == 'nt':
+		return 'windows'
+	elif os.name == 'posix' and platform.system() == "Darwin":
+		return 'macOS'
+	elif os.name == 'posix' and platform.system() == "Linux":
+		return 'linux'
+
+def MATTECREATOR_FN_pythonExecutable(OS):
+	if OS == 'windows':
+		return os.path.join(sys.prefix, 'bin', 'python.exe')
+	elif OS == 'macOS':
+		return os.path.abspath(sys.executable)
+	elif OS == 'linux':
+		return os.path.join(sys.prefix, 'sys.prefix/bin', 'python')
+	else:
+		return None
+
+def MATTECREATOR_FN_installPythonPackage(package, executable):	
+	try:
+		subprocess.call([executable, '-m', 'ensurepip'])
+		subprocess.call([executable, '-m', 'pip', 'install', '--upgrade', 'pip'])
+		subprocess.call([executable, '-m', 'pip', 'install', package])
+	except:
+		print('There was an issue installing the Library.')
+
+MATTECREATOR_OPERATING_SYSTEM = MATTECREATOR_FN_getOS()
+MATTECREATOR_PYTHON_EXECUTABLE = MATTECREATOR_FN_pythonExecutable(MATTECREATOR_OPERATING_SYSTEM)
+MATTECREATOR_PYTHON_DEPENDENCIES = ['opencv-python', 'pillow', 'torch', 'torchvision', 'numpy']
 
 def MATTECREATOR_FN_loadVideo(path):
 	cap = cv2.VideoCapture(path)
@@ -89,12 +119,9 @@ def MATTECREATOR_FN_loadVideo(path):
 	return cap
 
 def MATTECREATOR_FN_loadImage(path):
-	#bgr = [PIL.Image.open(path).convert('RGB')]
 	bgr = PIL.Image.open(path).convert('RGB')
 	bgr = np.array(bgr)
 	return [bgr]
-
-#torch.utils.data.Dataset
 
 def MATTECREATOR_FN_zipDataSet(datasets, transforms=None, assert_equal_length=False):
 	if assert_equal_length:
@@ -161,8 +188,20 @@ def MATTECREATOR_FN_helloWorld(self, context):
 			com_writer.add_batch(com)
 			print(f'Writing frame... {idx}')
 
-
 # Classes ---------------------- 
+
+class MATTECREATOR_OT_installPackages(bpy.types.Operator):
+	bl_idname = 'mattecreator.install_packages'
+	bl_label = ''
+	bl_options = {'REGISTER', 'UNDO'}
+	bl_description = 'Install necessary packages.'
+
+	def execute(self, context):
+		bpy.ops.wm.console_toggle()
+		for dependency in MATTECREATOR_PYTHON_DEPENDENCIES:
+			MATTECREATOR_FN_installPythonPackage(dependency, MATTECREATOR_PYTHON_EXECUTABLE)
+		print('All dependencies installed successfully, please restart Blender.')
+		return{'FINISHED'}
 
 class MATTECREATOR_OT_helloWorld(bpy.types.Operator):
 	# Hello world!
@@ -174,6 +213,7 @@ class MATTECREATOR_OT_helloWorld(bpy.types.Operator):
 	def execute(self, context):
 		MATTECREATOR_FN_helloWorld(self, context)
 		return {'FINISHED'}	
+
 
 class MATTECREATOR_CLASS_videoWriter:
 	def __init__(self, path, frame_rate, width, height):
@@ -202,70 +242,74 @@ class MATTECREATOR_CLASS_imageSequenceWriter:
 		frames = frames.cpu()
 		for i in range(frames.shape[0]):
 			frame = frames[i]
-			frame = to_pil_image(frame)
+			frame = to_pil_image(frame) # NEED TO INSTANTIATE
 			frame.save(os.path.join(self.path, str(index + i).zfill(5) + '.' + self.extension))	
 
-class MATTECREATOR_CLASS_videoDataset(torch.utils.data.Dataset):
-	def __init__(self, path: str, transforms: any = None):
-		self.cap = cv2.VideoCapture(path)
-		self.transforms = transforms
 
-		self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-		self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-		self.frame_rate = self.cap.get(cv2.CAP_PROP_FPS)
-		self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+if not MATTECREATOR_MISSING_DEPENDENCIES:
+	class MATTECREATOR_CLASS_videoDataset(torch.utils.data.Dataset):
+		def __init__(self, path: str, transforms: any = None):
+			self.cap = cv2.VideoCapture(path)
+			self.transforms = transforms
 
-	def __len__(self):
-		return self.frame_count
+			self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+			self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+			self.frame_rate = self.cap.get(cv2.CAP_PROP_FPS)
+			self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-	def __getitem__(self, idx):
-		if isinstance(idx, slice):
-			return [self[i] for i in range(*idx.indices(len(self)))]
+		def __len__(self):
+			return self.frame_count
 
-		if self.cap.get(cv2.CAP_PROP_POS_FRAMES) != idx:
-			self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-		ret, img = self.cap.read()
-		if not ret:
-			raise IndexError(f'Idx: {idx} out of length: {len(self)}')
-		img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-		#img = PIL.Image.fromarray(img) #DO I NEED THIS????
-		if self.transforms:
-			img = self.transforms(img)
-		return img
+		def __getitem__(self, idx):
+			if isinstance(idx, slice):
+				return [self[i] for i in range(*idx.indices(len(self)))]
 
-	def __enter__(self):
-		return self
+			if self.cap.get(cv2.CAP_PROP_POS_FRAMES) != idx:
+				self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+			ret, img = self.cap.read()
+			if not ret:
+				raise IndexError(f'Idx: {idx} out of length: {len(self)}')
+			img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+			#img = PIL.Image.fromarray(img) #DO I NEED THIS????
+			if self.transforms:
+				img = self.transforms(img)
+			return img
 
-	def __exit__(self, exc_type, exc_value, exc_traceback):
-		self.cap.release()					
+		def __enter__(self):
+			return self
 
-class MATTECREATOR_CLASS_zipDataset(torch.utils.data.Dataset):
-	def __init__(self, datasets, transforms=None, assert_equal_length=False):
-		self.datasets = datasets
-		self.transforms = transforms
-        
-		if assert_equal_length:
-			for i in range(1, len(datasets)):
-				assert len(datasets[i]) == len(datasets[i - 1]), 'Datasets are not equal in length.'
-    
-	def __len__(self):
-		return max(len(d) for d in self.datasets)
-    
-	def __getitem__(self, idx):
-		x = tuple(d[idx % len(d)] for d in self.datasets)
-		if self.transforms:
-			x = self.transforms(*x)
-		return x    		
+		def __exit__(self, exc_type, exc_value, exc_traceback):
+			self.cap.release()	
+				
+	class MATTECREATOR_CLASS_zipDataset(torch.utils.data.Dataset):
+		def __init__(self, datasets, transforms=None, assert_equal_length=False):
+			self.datasets = datasets
+			self.transforms = transforms
+	        
+			if assert_equal_length:
+				for i in range(1, len(datasets)):
+					assert len(datasets[i]) == len(datasets[i - 1]), 'Datasets are not equal in length.'
+	    
+		def __len__(self):
+			return max(len(d) for d in self.datasets)
+	    
+		def __getitem__(self, idx):
+			x = tuple(d[idx % len(d)] for d in self.datasets)
+			if self.transforms:
+				x = self.transforms(*x)
+			return x    	
+	
 
 #--------------------------------------------------------------
 # Transforms
 #--------------------------------------------------------------
 
-class MATTECREATOR_CLASS_pairCompose(T.Compose):
-	def __call__(self, *x):
-		for transform in self.transforms:
-			x = transform(*x)
-		return x
+if not MATTECREATOR_MISSING_DEPENDENCIES:
+	class MATTECREATOR_CLASS_pairCompose(torchvision.transforms.Compose):
+		def __call__(self, *x):
+			for transform in self.transforms:
+				x = transform(*x)
+			return x
 
 class MATTECREATOR_CLASS_pairApply:
 	def __init__(self, transforms):
@@ -329,7 +373,26 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 		return snode.tree_type == 'CompositorNodeTree'
 
 	def draw(self, context):
-		layout = self.layout		
+		layout = self.layout	
+
+class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
+	bl_label = 'Initial Setup'
+	bl_idname = 'MATTECREATOR_PT_panelInitialSetup'
+	bl_space_type = 'NODE_EDITOR'
+	bl_region_type = 'UI'
+	bl_category = 'MatteCreator'
+	bl_parent_id = 'MATTECREATOR_PT_panelMain'
+
+	@classmethod
+	def poll(cls, context):
+		snode = context.space_data
+		return snode.tree_type == 'CompositorNodeTree'
+
+	def draw(self, context):	
+		layout = self.layout		 
+		row = layout.row()
+		row.operator(MATTECREATOR_OT_installPackages.bl_idname, text='Install Packages', icon_value=727)
+
 
 class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 	bl_label = 'Hello World!'
@@ -345,7 +408,7 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 		return snode.tree_type == 'CompositorNodeTree'
 
 	def draw(self, context):
-		layout = self.layout
+		layout = self.layout		
 
 		# Model Type
 		row = layout.row()
@@ -424,7 +487,6 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFormat', text='Format')
 
-
 		row = layout.row()
 		row.operator(MATTECREATOR_OT_helloWorld.bl_idname, text='Hello World', icon_value=727)
 
@@ -432,10 +494,8 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 # Register 
 #--------------------------------------------------------------
 
-classes = ()
-
-classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelHelloWorld)
-classes_functionality = (MATTECREATOR_OT_helloWorld,)
+classes_interface = (MATTECREATOR_PT_panelMain,)
+classes_functionality = (MATTECREATOR_OT_helloWorld, MATTECREATOR_OT_installPackages)
 
 def register():
 
@@ -445,6 +505,13 @@ def register():
 	for c in classes_functionality:
 		bpy.utils.register_class(c)
 
+	# Register Panels Based on installed Dependencies
+
+	if MATTECREATOR_MISSING_DEPENDENCIES:
+		bpy.utils.register_class(MATTECREATOR_PT_panelInitialSetup)
+	else:
+		bpy.utils.register_class(MATTECREATOR_PT_panelHelloWorld)
+		
 	# Hyperparameters
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelType', items=[('mattingbase', 'mattingbase', ''), ('mattingrefine', 'mattingrefine', '')])
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackbone = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelBackbone', items=[('resnet101', 'resnet101', ''), ('resnet50', 'resnet50', ''), ('mobilenetv2', 'mobilenetv2', '')]) 
@@ -472,12 +539,9 @@ def register():
 
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFormat = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_outputFormat', items=[('video', 'Video', ''), ('image_sequences', 'Image Sequence', '')], default='video')
 
-
-	
-
 	# Possibly Temp
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeX = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_resizeX')
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeY = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_resizeY')
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeY = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_resizeY')	
 
 
 def unregister():
@@ -487,6 +551,13 @@ def unregister():
 		bpy.utils.unregister_class(c)
 	for c in reversed(classes_functionality):
 		bpy.utils.unregister_class(c)
+
+	# Unregister Panels based on Installed Dependencies
+
+	if MATTECREATOR_MISSING_DEPENDENCIES:
+		bpy.utils.unregister_class(MATTECREATOR_PT_panelInitialSetup)
+	else:
+		bpy.utils.unregister_class(MATTECREATOR_PT_panelHelloWorld)
 
 	# Hyperparamaters
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType
