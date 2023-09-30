@@ -49,6 +49,7 @@ import bpy
 import sys
 import subprocess
 import platform
+from time import sleep
 
 import bpy_extras
 import math 
@@ -98,16 +99,29 @@ def MATTECREATOR_FN_pythonExecutable(OS):
 		return None
 
 def MATTECREATOR_FN_installPythonPackage(package, executable):	
+	# Update PIP
 	try:
 		subprocess.call([executable, '-m', 'ensurepip'])
 		subprocess.call([executable, '-m', 'pip', 'install', '--upgrade', 'pip'])
-		subprocess.call([executable, '-m', 'pip', 'install', package])
 	except:
-		print('There was an issue installing the Library.')
-
+		print('There was an issue with Pip, please try again or install packages manually.')
+		print(f'Python.exe location: {executable}')
+	# Install Torch with CUDA Support	
+	if package == 'torch':
+		try:		
+			subprocess.call([executable, '-m', 'pip', 'install', 'torch', 'torchvision', '--index-url', 'https://download.pytorch.org/whl/cu117'])
+		except:
+			print('There was an issue installing the Library.')
+	else:
+		try:
+			subprocess.call([executable, '-m', 'pip', 'install', package])
+		except:
+			print('There was an issue installing the Library, please try again or install packages manually.')
+			print(f'Python.exe location: {executable}')
+		
 MATTECREATOR_OPERATING_SYSTEM = MATTECREATOR_FN_getOS()
 MATTECREATOR_PYTHON_EXECUTABLE = MATTECREATOR_FN_pythonExecutable(MATTECREATOR_OPERATING_SYSTEM)
-MATTECREATOR_PYTHON_DEPENDENCIES = ['opencv-python', 'pillow', 'torch', 'torchvision', 'numpy']
+MATTECREATOR_PYTHON_DEPENDENCIES = ['opencv-python', 'pillow', 'torch', 'numpy']
 
 def MATTECREATOR_FN_loadVideo(path):
 	cap = cv2.VideoCapture(path)
@@ -141,7 +155,11 @@ def MATTECREATOR_FN_helloWorld(self, context):
 	image_path = "D:/Documents/Scenefiller/mattecreator/data/bgr.png"
 
 	# Instantiate Model
-	device = torch.device('cuda')
+	if bpy.context.scene.MATTECREATOR_HYPERPARAM_device == 'cpu':
+		device = torch.device('cpu')
+	else:
+		device = torch.device('cuda')
+
 	precision = torch.float16
 	model = torch.jit.load(model_path)
 	model.backbone_scale = 0.25
@@ -163,7 +181,7 @@ def MATTECREATOR_FN_helloWorld(self, context):
 
 	# Instantiate Writers
 	fgr_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'fgr.mp4'), vid.frame_rate, w, h)
-	com_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'com.mp4'), vid.frame_rate, w, h)
+	com_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'com.mp4'), vid.frame_rate, w, h)	
 
 	with torch.no_grad():
 		for idx, input_batch in enumerate(DataLoader(dataset, batch_size=1, pin_memory=True)):
@@ -180,13 +198,11 @@ def MATTECREATOR_FN_helloWorld(self, context):
 			elif context.scene.MATTECREATOR_HYPERPARAM_modelType == 'OP3':
 				pha, fgr = model(src, bgr)
 
-			# Add an interface Prop to read current frame
-
 			com = fgr * pha + tgt_bgr * (1 - pha)
 
 			fgr_writer.add_batch(fgr)
 			com_writer.add_batch(com)
-			print(f'Writing frame... {idx}')
+			print(f'Writing frame... {idx} / {vid.frame_count}')		
 
 # Classes ---------------------- 
 
@@ -200,6 +216,7 @@ class MATTECREATOR_OT_installPackages(bpy.types.Operator):
 		bpy.ops.wm.console_toggle()
 		for dependency in MATTECREATOR_PYTHON_DEPENDENCIES:
 			MATTECREATOR_FN_installPythonPackage(dependency, MATTECREATOR_PYTHON_EXECUTABLE)
+		print('-----------------------------------------------------------------------------')
 		print('All dependencies installed successfully, please restart Blender.')
 		return{'FINISHED'}
 
@@ -211,7 +228,10 @@ class MATTECREATOR_OT_helloWorld(bpy.types.Operator):
 	bl_description = 'Hello world!'
 
 	def execute(self, context):
+		bpy.ops.wm.console_toggle()
 		MATTECREATOR_FN_helloWorld(self, context)
+		print('Finished writing.')
+		bpy.ops.wm.console_toggle()
 		return {'FINISHED'}	
 
 
@@ -375,6 +395,53 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 	def draw(self, context):
 		layout = self.layout	
 
+		row = layout.row()
+		row.label(text='Input', icon='NEWFOLDER')
+
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
+
+		# Video SRC
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoSource', text='Video File')
+
+		# Video BGR
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoBGR', text='Clean Plate')
+
+		# Model Checkpoint
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelCheckpoint', text='Checkpoint')
+
+		# Device
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_device', text='Device')
+
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
+
+		row = layout.row()
+		row.label(text='Output', icon='FILE_FOLDER')	
+
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
+		
+		# Output Directory
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputDirectory', text='Output Directory')
+
+		# Output Format
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFormat', text='Format')		
+
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
+
+		row = layout.row()
+		row.operator(MATTECREATOR_OT_helloWorld.bl_idname, text='Extract Matte', icon='COMMUNITY')
+
+		
+
 class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
 	bl_label = 'Initial Setup'
 	bl_idname = 'MATTECREATOR_PT_panelInitialSetup'
@@ -393,14 +460,14 @@ class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
 		row = layout.row()
 		row.operator(MATTECREATOR_OT_installPackages.bl_idname, text='Install Packages', icon_value=727)
 
-
-class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
-	bl_label = 'Hello World!'
-	bl_idname = 'MATTECREATOR_PT_panelHelloWorld'
+class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
+	bl_label = 'Advanced'
+	bl_idname = 'MATTECREATOR_PT_panelAdvanced'
 	bl_space_type = 'NODE_EDITOR'
 	bl_region_type = 'UI'
 	bl_category = 'MatteCreator'
 	bl_parent_id = 'MATTECREATOR_PT_panelMain'
+	bl_options = {'DEFAULT_CLOSED'}
 
 	@classmethod
 	def poll(cls, context):
@@ -408,7 +475,7 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 		return snode.tree_type == 'CompositorNodeTree'
 
 	def draw(self, context):
-		layout = self.layout		
+		layout = self.layout
 
 		# Model Type
 		row = layout.row()
@@ -421,13 +488,8 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 		# Model Backbone Scale
 		row = layout.row()
 		row.label(text='Scale: ')
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelBackboneScale', text='')
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelBackboneScale', text='')	
 
-		# Model Checkpoint
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelCheckpoint', text='Checkpoint')
-
-		# Move to "Refine" panel and simplify names
 		# Refine Mode
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelRefineMode', text='Refine Mode')
@@ -444,34 +506,17 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_refineKernelSize', text='Kernel Size')
 
-		# Video SRC
+		# Preprocess Alignment
 		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoSource', text='Video File')
-
-		# Video BGR
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoBGR', text='Background Image')
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_preprocessAlignment', text='Preprocess Alignment')
 
 		# Video Target BGR
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoTargetBGR', text='Video Target BGR')
 
-		# Device
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_device', text='Device')
-
-		# Preprocess Alignment
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_preprocessAlignment', text='Preprocess Alignment')
-
-		# Output Directory
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputDirectory', text='Output Directory')
-
 		# Output Types
 		row = layout.row()
 		row.label(text='Output Layers:')
-
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputCom', text='Composite')
 		row = layout.row()
@@ -482,19 +527,16 @@ class MATTECREATOR_PT_panelHelloWorld(bpy.types.Panel):
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputErr', text='Error')
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputRef', text='Reference')
+	
 
-		# Output Format
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFormat', text='Format')
 
-		row = layout.row()
-		row.operator(MATTECREATOR_OT_helloWorld.bl_idname, text='Hello World', icon_value=727)
+		
 
 #--------------------------------------------------------------
 # Register 
 #--------------------------------------------------------------
 
-classes_interface = (MATTECREATOR_PT_panelMain,)
+classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelAdvanced)
 classes_functionality = (MATTECREATOR_OT_helloWorld, MATTECREATOR_OT_installPackages)
 
 def register():
@@ -509,8 +551,6 @@ def register():
 
 	if MATTECREATOR_MISSING_DEPENDENCIES:
 		bpy.utils.register_class(MATTECREATOR_PT_panelInitialSetup)
-	else:
-		bpy.utils.register_class(MATTECREATOR_PT_panelHelloWorld)
 		
 	# Hyperparameters
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelType', items=[('mattingbase', 'mattingbase', ''), ('mattingrefine', 'mattingrefine', '')])
@@ -556,8 +596,6 @@ def unregister():
 
 	if MATTECREATOR_MISSING_DEPENDENCIES:
 		bpy.utils.unregister_class(MATTECREATOR_PT_panelInitialSetup)
-	else:
-		bpy.utils.unregister_class(MATTECREATOR_PT_panelHelloWorld)
 
 	# Hyperparamaters
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType
