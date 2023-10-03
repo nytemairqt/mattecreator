@@ -57,7 +57,7 @@ import importlib
 
 from mathutils import Vector
 from bpy_extras import view3d_utils
-from bpy_extras.io_utils import ImportHelper
+from bpy_extras.io_utils import ImportHelper, ExportHelper
 from bpy_extras.image_utils import load_image
 
 try:
@@ -67,7 +67,8 @@ try:
 
 	import torchvision 
 	from torchvision import transforms as T 
-	from torchvision.transforms import functional as F 
+	from torch.nn import functional as F 
+	from torchvision.transforms.functional import to_pil_image
 
 	import numpy as np
 	import PIL
@@ -149,6 +150,10 @@ def MATTECREATOR_FN_loadImage(path):
 	bgr = np.array(bgr)
 	return [bgr]
 
+def MATTECREATOR_FN_setOutputDir(context, directory, files):
+	print(directory)
+	return{'FINISHED'}
+
 def MATTECREATOR_FN_zipDataSet(datasets, transforms=None, assert_equal_length=False):
 	if assert_equal_length:
 		for i in range(1, len(datasets)):
@@ -156,35 +161,50 @@ def MATTECREATOR_FN_zipDataSet(datasets, transforms=None, assert_equal_length=Fa
 
 def MATTECREATOR_FN_extractMatte(self, context):
 	VIDEO_RESIZE = None
-	PREPROCESS_ALIGNMENT = None
 
-	model_path = 'D:/Documents/Scenefiller/mattecreator/model/torchscript_resnet50_fp16.pth'
-	output_dir = 'D:/Documents/Scenefiller/mattecreator/output/'
+	# Gather Filepaths
 
-	# Reference SRC & BGR Files	
+	# Source Video
 	try:
 		video_path = bpy.path.abspath(bpy.context.scene.MATTECREATOR_VAR_videoSource.filepath)
 	except:
 		self.report({'WARNING'}, 'Please select a valid foreground Video File.')
 		return{'CANCELLED'}
+
+	# Clean Plate
 	try:
 		image_path = bpy.path.abspath(bpy.context.scene.MATTECREATOR_VAR_cleanPlate.filepath)	
 	except:
 		self.report({'WARNING'}, 'Please select a valid background Image Plate.')
 		return{'CANCELLED'}
-		
+
+	# Model Checkpoint
+	try:
+		model_path = bpy.path.abspath(bpy.context.scene.MATTECREATOR_VAR_modelPath)
+	except:
+		self.report({'WARNING'}, 'Please select a valid Model Checkpoint (.pth).')
+		return{'CANCELLED'}
+
+	# Output Directory
+	try: 
+		output_dir = bpy.path.abspath(bpy.context.scene.MATTECREATOR_VAR_outputDir)	
+	except:
+		self.report({'WARNING'}, 'Please select a valid Output Directory.')
+		return{'CANCELLED'}		
 
 	# Instantiate Model
-	if bpy.context.scene.MATTECREATOR_HYPERPARAM_device == 'cpu':
-		device = torch.device('cpu')
-	else:
-		device = torch.device('cuda')
-
+	device = bpy.context.scene.MATTECREATOR_HYPERPARAM_device
 	precision = torch.float16
 	model = torch.jit.load(model_path)
-	model.backbone_scale = 0.25
-	model.refine_mode = 'sampling'
-	model.refine_sample_pixels = 80000
+	#model.backbone = context.scene.MATTECREATOR_HYPERPARAM_modelBackbone
+
+	if context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingrefine':
+		model.backbone_scale = bpy.context.scene.MATTECREATOR_HYPERPARAM_modelBackboneScale
+		model.refine_mode = bpy.context.scene.MATTECREATOR_HYPERPARAM_modelRefineMode
+		model.refine_sample_pixels = bpy.context.scene.MATTECREATOR_HYPERPARAM_refineSamplePixels
+		model.refine_threshold = bpy.context.scene.MATTECREATOR_HYPERPARAM_refineThreshold
+		model.refine_kernel_size = bpy.context.scene.MATTECREATOR_HYPERPARAM_refineKernelSize		
+
 	model = model.to(device).eval()
 
 	# Load Data
@@ -193,15 +213,35 @@ def MATTECREATOR_FN_extractMatte(self, context):
 
 	dataset = MATTECREATOR_CLASS_zipDataset([vid, bgr], transforms=MATTECREATOR_CLASS_pairCompose([
     MATTECREATOR_CLASS_pairApply(T.Resize(VIDEO_RESIZE[::-1]) if VIDEO_RESIZE else nn.Identity()),
-    MATTECREATOR_CLASS_homographicAlignment() if PREPROCESS_ALIGNMENT else MATTECREATOR_CLASS_pairApply(nn.Identity()),
+    MATTECREATOR_CLASS_homographicAlignment() if context.scene.MATTECREATOR_HYPERPARAM_preprocessAlignment else MATTECREATOR_CLASS_pairApply(nn.Identity()),
     MATTECREATOR_CLASS_pairApply(T.ToTensor())]))
 
-	w = vid.width
-	h = vid.height
-
 	# Instantiate Writers
-	fgr_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'fgr.mp4'), vid.frame_rate, w, h)
-	com_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'com.mp4'), vid.frame_rate, w, h)	
+	if context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'video':
+		h = vid.height # Will anyone ever need resizing? Really?
+		w = vid.width
+
+		if context.scene.MATTECREATOR_HYPERPARAM_outputCom:
+			com_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'com.mp4'), vid.frame_rate, w, h)
+		if context.scene.MATTECREATOR_HYPERPARAM_outputPha:
+			pha_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'pha.mp4'), vid.frame_rate, w, h)
+		if context.scene.MATTECREATOR_HYPERPARAM_outputFgr:
+			fgr_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'fgr.mp4'), vid.frame_rate, w, h)
+		if context.scene.MATTECREATOR_HYPERPARAM_outputErr:
+			err_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'err.mp4'), vid.frame_rate, w, h)
+		if context.scene.MATTECREATOR_HYPERPARAM_outputRef:
+			ref_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'ref.mp4'), vid.frame_rate, w, h)
+	else:
+		if context.scene.MATTECREATOR_HYPERPARAM_outputCom:
+			com_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'com'), 'png')
+		if context.scene.MATTECREATOR_HYPERPARAM_outputPha:
+			pha_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'pha'), 'jpg')
+		if context.scene.MATTECREATOR_HYPERPARAM_outputFgr:
+			fgr_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'fgr'), 'jpg')
+		if context.scene.MATTECREATOR_HYPERPARAM_outputErr:
+			err_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'err'), 'jpg')
+		if context.scene.MATTECREATOR_HYPERPARAM_outputRef:
+			ref_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'ref'), 'jpg')
 
 	bpy.ops.wm.console_toggle()
 
@@ -217,13 +257,28 @@ def MATTECREATOR_FN_extractMatte(self, context):
 				pha, fgr, err, _ = model(src, bgr)
 			elif context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingrefine':
 				pha, fgr, _, _, err, ref = model(src, bgr)
-			elif context.scene.MATTECREATOR_HYPERPARAM_modelType == 'OP3':
+			elif context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingbm':
 				pha, fgr = model(src, bgr)
 
-			com = fgr * pha + tgt_bgr * (1 - pha)
+			# Write Batches Out
+			if context.scene.MATTECREATOR_HYPERPARAM_outputCom:
+				if context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'video':
+					# Green Background
+					com = fgr * pha + tgt_bgr * (1 - pha)
+					com_writer.add_batch(com)
+				else:
+					# RGBA Images
+					com = torch.cat([fgr * pha.ne(0), pha], dim=1)
+					com_writer.add_batch(com)
+			if context.scene.MATTECREATOR_HYPERPARAM_outputPha:
+				pha_writer.add_batch(pha)
+			if context.scene.MATTECREATOR_HYPERPARAM_outputFgr:
+				fgr_writer.add_batch(fgr)
+			if context.scene.MATTECREATOR_HYPERPARAM_outputErr:
+				err_writer.add_batch(F.interpolate(err, src.shape[2:], mode='bilinear', align_corners=False))
+			if context.scene.MATTECREATOR_HYPERPARAM_outputRef:
+				ref_writer.add_batch(F.interpolate(ref, src.shape[2:], mode='nearest'))
 
-			fgr_writer.add_batch(fgr)
-			com_writer.add_batch(com)
 			print(f'Writing frame... {idx} / {vid.frame_count}')	
 
 	print('Finished writing.')
@@ -244,30 +299,6 @@ class MATTECREATOR_OT_installPackages(bpy.types.Operator):
 		print('-----------------------------------------------------------------------------')
 		print('All dependencies installed successfully, please restart Blender.')
 		return{'FINISHED'}
-
-class MATTECREATOR_OT_setModelCheckpointPath(bpy.types.Operator, ImportHelper):
-	bl_idname = 'mattecreator.set_model_checkpoint_path'
-	bl_label = ''
-	bl_options = {'REGISTER', 'UNDO'}
-	bl_description = 'Select a checkpoint file to load into the Model.'
-
-	filter_glob: bpy.props.StringProperty(
-			default='*.pth;',
-			options={'HIDDEN'}
-		)
-
-	def execute(self, context):
-		bpy.context.scene.MATTECREATOR_VAR_modelPath = self.properties.filepath 
-
-class MATTECREATOR_OT_setOutputDirPath(bpy.types.Operator, ImportHelper):
-	bl_idname = 'mattecreator.set_output_dir_path'
-	bl_label = ''
-	bl_options = {'REGISTER', 'UNDO'}
-	bl_description = 'Select a folder to export generated matte.'
-
-	def execute(self, context):
-		bpy.context.scene.MATTECREATOR_VAR_outputDir = self.properties.filepath 	
-
 
 class MATTECREATOR_OT_extractMatte(bpy.types.Operator):
 	# Hello world!
@@ -308,9 +339,8 @@ class MATTECREATOR_CLASS_imageSequenceWriter:
 		frames = frames.cpu()
 		for i in range(frames.shape[0]):
 			frame = frames[i]
-			frame = to_pil_image(frame) # NEED TO INSTANTIATE
+			frame = to_pil_image(frame) 
 			frame.save(os.path.join(self.path, str(index + i).zfill(5) + '.' + self.extension))	
-
 
 if not MATTECREATOR_MISSING_DEPENDENCIES:
 	class MATTECREATOR_CLASS_videoDataset(torch.utils.data.Dataset):
@@ -442,6 +472,15 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 		layout = self.layout	
 
 		row = layout.row()
+		row.label(text='Install Packages:')
+		row.operator(MATTECREATOR_OT_installPackages.bl_idname, text='Install', icon_value=727)
+
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
+
+		row = layout.row()
 		row.label(text='Input', icon='REMOVE')
 
 		row = layout.row() # Additional Spacing
@@ -458,13 +497,14 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 		# Model Checkpoint
 		row = layout.row()
 		row.label(text='Model Checkpoint')
-		row.label(text=bpy.context.scene.MATTECREATOR_VAR_modelPath)
-		row.operator(MATTECREATOR_OT_setModelCheckpointPath.bl_idname, text='', icon='FILE_FOLDER')
+		row.prop(context.scene, 'MATTECREATOR_VAR_modelPath')
 
 		# Device
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_device', text='Device')
 
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
 		row = layout.row() # Additional Spacing
 		row = layout.row() # Additional Spacing
 
@@ -476,7 +516,9 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 		
 		# Output Directory
 		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputDirectory', text='Output Directory')
+		row.label(text='Output Folder: ')
+		row.prop(context.scene, 'MATTECREATOR_VAR_outputDir')
+
 
 		# Output Format
 		row = layout.row()
@@ -488,7 +530,10 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 		row = layout.row()
 		row.operator(MATTECREATOR_OT_extractMatte.bl_idname, text='Extract Matte', icon='COMMUNITY')
 
-		
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing
+		row = layout.row() # Additional Spacing		
 
 class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
 	bl_label = 'Initial Setup'
@@ -505,8 +550,7 @@ class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
 
 	def draw(self, context):	
 		layout = self.layout		 
-		row = layout.row()
-		row.operator(MATTECREATOR_OT_installPackages.bl_idname, text='Install Packages', icon_value=727)
+		
 
 class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 	bl_label = 'Advanced'
@@ -523,7 +567,7 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 		return snode.tree_type == 'CompositorNodeTree'
 
 	def draw(self, context):
-		layout = self.layout
+		layout = self.layout		
 
 		# Model Type
 		row = layout.row()
@@ -570,11 +614,11 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputPha', text='Alpha Matte')
 		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFgr', text='Foreground')
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFgr', text='Coarse FGR')
 		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputErr', text='Error')
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputErr', text='Coarse ERR')
 		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputRef', text='Reference')
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputRef', text='Quarter REF')
 	
 
 
@@ -585,7 +629,7 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 #--------------------------------------------------------------
 
 classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelAdvanced)
-classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages, MATTECREATOR_OT_setModelCheckpointPath)
+classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages)
 
 def register():
 
@@ -595,17 +639,12 @@ def register():
 	for c in classes_functionality:
 		bpy.utils.register_class(c)
 
-	# Register Panels Based on installed Dependencies
-
-	if MATTECREATOR_MISSING_DEPENDENCIES:
-		bpy.utils.register_class(MATTECREATOR_PT_panelInitialSetup)
-
 	# File Variables
 
 	bpy.types.Scene.MATTECREATOR_VAR_videoSource = bpy.props.PointerProperty(name='', type=bpy.types.Image, description='Select a Source Video')
 	bpy.types.Scene.MATTECREATOR_VAR_cleanPlate = bpy.props.PointerProperty(name='', type=bpy.types.Image, description='Select a Clean Plate')
-	bpy.types.Scene.MATTECREATOR_VAR_modelPath = bpy.props.StringProperty(name='', default='')
-	bpy.types.Scene.MATTECREATOR_VAR_outputDir = bpy.props.StringProperty(name='', default='')
+	bpy.types.Scene.MATTECREATOR_VAR_modelPath = bpy.props.StringProperty(name='', default='', subtype='FILE_PATH')
+	bpy.types.Scene.MATTECREATOR_VAR_outputDir = bpy.props.StringProperty(name='', default='', subtype='DIR_PATH')
 		
 	# Hyperparameters
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelType', items=[('mattingbase', 'mattingbase', ''), ('mattingrefine', 'mattingrefine', '')])
@@ -646,16 +685,12 @@ def unregister():
 	for c in reversed(classes_functionality):
 		bpy.utils.unregister_class(c)
 
-	# Unregister Panels based on Installed Dependencies
-
-	if MATTECREATOR_MISSING_DEPENDENCIES:
-		bpy.utils.unregister_class(MATTECREATOR_PT_panelInitialSetup)
-
 	# File Variables
 	del bpy.types.Scene.MATTECREATOR_VAR_videoSource
 	del bpy.types.Scene.MATTECREATOR_VAR_cleanPlate
 	del bpy.types.Scene.MATTECREATOR_VAR_outputDir
 	del bpy.types.Scene.MATTECREATOR_VAR_modelPath
+	del bpy.types.Scene.MATTECREATOR_VAR_outputDir2
 
 	# Hyperparamaters
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType
