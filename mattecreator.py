@@ -165,7 +165,7 @@ def MATTECREATOR_FN_openHelpInConsole():
 	print('---------------------------------MATTECREATOR HELP---------------------------------')
 	print('                                                                                   ')
 	print('REQUIRED PACKAGES: Torch, Torchvision, Numpy, Pillow and OpenCV')
-	print('Package installation is handled automatically via Pip. If installation fails, please install packages manually.')
+	print('Package installation is handled internally via Pip. If installation fails, please try running Blender with Administrator privileges. Otherwise install packages manually via Pip.')
 	print('                                                                                   ')
 	print('                                                                                   ')
 	print('When selecting a Model Checkpoint (.pth), please keep in mind that CPU REQUIRES 32-Bit Float. CPU-Compatible checkpoints contain "fp32" in the file name.')
@@ -275,9 +275,13 @@ def MATTECREATOR_FN_extractMatte(self, context):
 
 	# Debug Printing
 
+	print('')
 	print(f'Using Device: {device}')
+	print('')
 	print(f'Using Checkpoint: {model_path}')
+	print('')
 	print(f'Starting Writers...')
+	print('')
 
 	with torch.no_grad():
 		for idx, input_batch in enumerate(DataLoader(dataset, batch_size=1, pin_memory=True)):
@@ -427,6 +431,17 @@ class MATTECREATOR_OT_openHelpInConsole(bpy.types.Operator):
 	def execute(self, context):	
 		MATTECREATOR_FN_openHelpInConsole()	
 		return {'FINISHED'}
+
+class MATTECREATOR_OT_reportAnIssue(bpy.types.Operator):
+	# Opens a web browser to a Google contact form. 
+	bl_idname = 'mattecreator.report_an_issue'
+	bl_label = ''
+	bl_options = {'REGISTER', 'UNDO'}
+	bl_description = 'Opens a web browser to a Google contact form'
+
+	def execute(self, context):
+		webbrowser.open('https://forms.gle/Gg8THKQFF73KtzS16')
+		return{'FINISHED'}
 
 
 class MATTECREATOR_CLASS_videoWriter:
@@ -614,8 +629,9 @@ class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
 		row.operator(MATTECREATOR_OT_downloadModels.bl_idname, text='Download', icon_value=727)
 
 		row = layout.row()
-		row.label(text='Report an Issue')
-		row.operator(MATTECREATOR_OT_openHelpInConsole.bl_idname, text='', icon='QUESTION')
+		row.label(text='Support:')
+		row.operator(MATTECREATOR_OT_openHelpInConsole.bl_idname, text='Common Issues', icon='QUESTION')
+		row.operator(MATTECREATOR_OT_reportAnIssue.bl_idname, text='Open a Ticket', icon='GREASEPENCIL')
 
 class MATTECREATOR_PT_panelMatting(bpy.types.Panel):
 	bl_label = 'Matting'
@@ -747,8 +763,8 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_preprocessAlignment', text='Preprocess Alignment')
 
 		# Video Target BGR
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoTargetBGR', text='Video Target BGR')
+		#row = layout.row()
+		#row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoTargetBGR', text='Video Target BGR')
 
 		
 	
@@ -761,7 +777,7 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 #--------------------------------------------------------------
 
 classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelInitialSetup, MATTECREATOR_PT_panelMatting, MATTECREATOR_PT_panelAdvanced)
-classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages, MATTECREATOR_OT_downloadModels, MATTECREATOR_OT_loadVideoWithFileBrowser, MATTECREATOR_OT_loadCleanPlateWithFileBrowser, MATTECREATOR_OT_openHelpInConsole)
+classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages, MATTECREATOR_OT_downloadModels, MATTECREATOR_OT_loadVideoWithFileBrowser, MATTECREATOR_OT_loadCleanPlateWithFileBrowser, MATTECREATOR_OT_openHelpInConsole, MATTECREATOR_OT_reportAnIssue)
 
 def register():
 
