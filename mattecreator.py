@@ -50,6 +50,7 @@ import sys
 import subprocess
 import platform
 from time import sleep
+import webbrowser
 
 import bpy_extras
 import math 
@@ -57,7 +58,7 @@ import importlib
 
 from mathutils import Vector
 from bpy_extras import view3d_utils
-from bpy_extras.io_utils import ImportHelper, ExportHelper
+from bpy_extras.io_utils import ImportHelper
 from bpy_extras.image_utils import load_image
 
 try:
@@ -300,6 +301,55 @@ class MATTECREATOR_OT_installPackages(bpy.types.Operator):
 		print('All dependencies installed successfully, please restart Blender.')
 		return{'FINISHED'}
 
+class MATTECREATOR_OT_downloadModels(bpy.types.Operator):
+	bl_idname = 'mattecreator.download_models'
+	bl_label = ''
+	bl_options = {'REGISTER', 'UNDO'}
+	bl_description = 'Download pre-trained model file.'
+
+	def execute(self, context):
+		webbrowser.open('https://drive.google.com/drive/folders/1fMl7qepWqWvROlWvwLyr9TFGaAUBIYtW')
+		return{'FINISHED'}
+
+class MATTECREATOR_OT_loadVideoWithFileBrowser(bpy.types.Operator, ImportHelper):
+	bl_idname = 'mattecreator.load_video_with_file_browser'
+	bl_label = ''
+	bl_options = {'REGISTER', 'UNDO'}
+	bl_description = 'Open a File Browser to select a Video File.'
+
+	filter_glob: bpy.props.StringProperty(
+			default='*.avi;*.mp4;*.mov;*.webm;*.mkv;',
+			options={'HIDDEN'}
+		)
+
+	def execute(self, context):
+		image = load_image(self.filepath, check_existing=True)
+
+		if image is None:
+			return{'CANCELLED'}
+		bpy.context.scene.MATTECREATOR_VAR_videoSource = image
+
+		return {'FINISHED'}	
+
+class MATTECREATOR_OT_loadCleanPlateWithFileBrowser(bpy.types.Operator, ImportHelper):
+	bl_idname = 'mattecreator.load_clean_plate_with_file_browser'
+	bl_label = ''
+	bl_options = {'REGISTER', 'UNDO'}
+	bl_description = 'Open a File Browser to select a Background Image.'
+
+	filter_glob: bpy.props.StringProperty(
+			default='*.jpg;*.jpeg;*.png;*.tif;*.tiff;*.bmp;',
+			options={'HIDDEN'}
+		)
+
+	def execute(self, context):
+		image = load_image(self.filepath, check_existing=True)
+		if image is None:
+			return{'CANCELLED'}
+		bpy.context.scene.MATTECREATOR_VAR_cleanPlate = image
+
+		return {'FINISHED'}	
+
 class MATTECREATOR_OT_extractMatte(bpy.types.Operator):
 	# Hello world!
 	bl_idname = 'mattecreator.extract_matte'
@@ -470,15 +520,47 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 
 	def draw(self, context):
 		layout = self.layout	
+		
+class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
+	bl_label = 'Setup'
+	bl_idname = 'MATTECREATOR_PT_panelInitialSetup'
+	bl_space_type = 'NODE_EDITOR'
+	bl_region_type = 'UI'
+	bl_category = 'MatteCreator'
+	bl_parent_id = 'MATTECREATOR_PT_panelMain'
+	bl_options = {'DEFAULT_CLOSED'}
+
+	@classmethod
+	def poll(cls, context):
+		snode = context.space_data
+		return snode.tree_type == 'CompositorNodeTree'
+
+	def draw(self, context):	
+		layout = self.layout	
 
 		row = layout.row()
 		row.label(text='Install Packages:')
 		row.operator(MATTECREATOR_OT_installPackages.bl_idname, text='Install', icon_value=727)
 
-		row = layout.row() # Additional Spacing
-		row = layout.row() # Additional Spacing
-		row = layout.row() # Additional Spacing
-		row = layout.row() # Additional Spacing
+		row = layout.row()
+		row.label(text='Download Pre-Trained Models')
+		row.operator(MATTECREATOR_OT_downloadModels.bl_idname, text='Download', icon_value=727)
+
+class MATTECREATOR_PT_panelMatting(bpy.types.Panel):
+	bl_label = 'Matting'
+	bl_idname = 'MATTECREATOR_PT_panelMatting'
+	bl_space_type = 'NODE_EDITOR'
+	bl_region_type = 'UI'
+	bl_category = 'MatteCreator'
+	bl_parent_id = 'MATTECREATOR_PT_panelMain'
+
+	@classmethod
+	def poll(cls, context):
+		snode = context.space_data
+		return snode.tree_type == 'CompositorNodeTree'
+
+	def draw(self, context):
+		layout = self.layout	
 
 		row = layout.row()
 		row.label(text='Input', icon='REMOVE')
@@ -489,14 +571,17 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 		# Video SRC
 		row = layout.row()
 		row.prop(context.scene, "MATTECREATOR_VAR_videoSource", text='Video File')
+		row.operator(MATTECREATOR_OT_loadVideoWithFileBrowser.bl_idname, text='', icon='FILE_FOLDER')
 
 		# Clean Plate Image
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_VAR_cleanPlate', text='Clean Plate')
+		row.operator(MATTECREATOR_OT_loadCleanPlateWithFileBrowser.bl_idname, text='', icon='FILE_FOLDER')
 
 		# Model Checkpoint
 		row = layout.row()
 		row.label(text='Model Checkpoint')
+		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_VAR_modelPath')
 
 		# Device
@@ -517,12 +602,20 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 		# Output Directory
 		row = layout.row()
 		row.label(text='Output Folder: ')
+		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_VAR_outputDir')
-
 
 		# Output Format
 		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFormat', text='Format')		
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFormat', text='Format')				
+
+		# Output Types
+		row = layout.row()
+		row.label(text='Output Layers:')
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputCom', text='Composite')
+		row = layout.row()
+		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputPha', text='Alpha Matte')
 
 		row = layout.row() # Additional Spacing
 		row = layout.row() # Additional Spacing
@@ -533,23 +626,7 @@ class MATTECREATOR_PT_panelMain(bpy.types.Panel):
 		row = layout.row() # Additional Spacing
 		row = layout.row() # Additional Spacing
 		row = layout.row() # Additional Spacing
-		row = layout.row() # Additional Spacing		
-
-class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
-	bl_label = 'Initial Setup'
-	bl_idname = 'MATTECREATOR_PT_panelInitialSetup'
-	bl_space_type = 'NODE_EDITOR'
-	bl_region_type = 'UI'
-	bl_category = 'MatteCreator'
-	bl_parent_id = 'MATTECREATOR_PT_panelMain'
-
-	@classmethod
-	def poll(cls, context):
-		snode = context.space_data
-		return snode.tree_type == 'CompositorNodeTree'
-
-	def draw(self, context):	
-		layout = self.layout		 
+		row = layout.row() # Additional Spacing	
 		
 
 class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
@@ -573,13 +650,9 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelType', text='Model')
 
-		# Model Backbone
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelBackbone', text='Backbone')
-
 		# Model Backbone Scale
 		row = layout.row()
-		row.label(text='Scale: ')
+		row.label(text='Backbone Scale: ')
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelBackboneScale', text='')	
 
 		# Refine Mode
@@ -606,19 +679,7 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoTargetBGR', text='Video Target BGR')
 
-		# Output Types
-		row = layout.row()
-		row.label(text='Output Layers:')
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputCom', text='Composite')
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputPha', text='Alpha Matte')
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputFgr', text='Coarse FGR')
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputErr', text='Coarse ERR')
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_outputRef', text='Quarter REF')
+		
 	
 
 
@@ -628,8 +689,8 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 # Register 
 #--------------------------------------------------------------
 
-classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelAdvanced)
-classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages)
+classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelInitialSetup, MATTECREATOR_PT_panelMatting, MATTECREATOR_PT_panelAdvanced)
+classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages, MATTECREATOR_OT_downloadModels, MATTECREATOR_OT_loadVideoWithFileBrowser, MATTECREATOR_OT_loadCleanPlateWithFileBrowser)
 
 def register():
 
@@ -649,7 +710,7 @@ def register():
 	# Hyperparameters
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelType', items=[('mattingbase', 'mattingbase', ''), ('mattingrefine', 'mattingrefine', '')])
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackbone = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelBackbone', items=[('resnet101', 'resnet101', ''), ('resnet50', 'resnet50', ''), ('mobilenetv2', 'mobilenetv2', '')]) 
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale = bpy.props.FloatProperty(name='MATTECREATOR_HYPERPARAM_modelBackboneScale', soft_min=0.1, soft_max=1.0, default=0.25)
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale = bpy.props.FloatProperty(name='MATTECREATOR_HYPERPARAM_modelBackboneScale', soft_min=0.1, soft_max=0.5, default=0.25)
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelCheckpoint = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_modelCheckpoint') # Replace with file selector with filter glob, need to make persistent too
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelRefineMode = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelRefineMode', items=[('full', 'full', ''), ('sampling', 'sampling', ''), ('thresholding', 'thresholding', '')])
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineSamplePixels = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_refineSamplePixels', soft_min=10000, soft_max=320000, default=80000)	
