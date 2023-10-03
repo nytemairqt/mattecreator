@@ -160,8 +160,24 @@ def MATTECREATOR_FN_zipDataSet(datasets, transforms=None, assert_equal_length=Fa
 		for i in range(1, len(datasets)):
 			assert len(datasets[i]) == len(datasets[i - 1]), 'Datasets are not equal in length.'
 
+def MATTECREATOR_FN_openHelpInConsole():
+	bpy.ops.wm.console_toggle()
+	print('---------------------------------MATTECREATOR HELP---------------------------------')
+	print('                                                                                   ')
+	print('REQUIRED PACKAGES: Torch, Torchvision, Numpy, Pillow and OpenCV')
+	print('Package installation is handled automatically via Pip. If installation fails, please install packages manually.')
+	print('                                                                                   ')
+	print('                                                                                   ')
+	print('When selecting a Model Checkpoint (.pth), please keep in mind that CPU REQUIRES 32-Bit Float. CPU-Compatible checkpoints contain "fp32" in the file name.')
+	print('                                                                                   ')
+	print('If you need further assistance or would like to report a bug, please use the Report an Issue button.')
+	print('                                                                                   ')
+	print('(Close this window via Window -> Toggle System Console in Blender.)')
+
 def MATTECREATOR_FN_extractMatte(self, context):
 	VIDEO_RESIZE = None
+
+	print('Starting BackgroundMattingV2...')
 
 	# Gather Filepaths
 
@@ -195,9 +211,18 @@ def MATTECREATOR_FN_extractMatte(self, context):
 
 	# Instantiate Model
 	device = bpy.context.scene.MATTECREATOR_HYPERPARAM_device
-	precision = torch.float16
+
+	if 'fp16' in model_path and device == 'cpu':
+		self.report({'WARNING'}, 'FP16 Models require CUDA/GPU.')
+		return{'CANCELLED'}
+
+	# CPU Safety Check
+	if 'fp32' in model_path:
+		precision = torch.float 
+	else: 
+		precision = torch.float16
+
 	model = torch.jit.load(model_path)
-	#model.backbone = context.scene.MATTECREATOR_HYPERPARAM_modelBackbone
 
 	if context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingrefine':
 		model.backbone_scale = bpy.context.scene.MATTECREATOR_HYPERPARAM_modelBackboneScale
@@ -234,25 +259,46 @@ def MATTECREATOR_FN_extractMatte(self, context):
 			ref_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'ref.mp4'), vid.frame_rate, w, h)
 	else:
 		if context.scene.MATTECREATOR_HYPERPARAM_outputCom:
-			com_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'com'), 'png')
+			com_path = os.path.join(output_dir, 'com')
+			com_writer = MATTECREATOR_CLASS_imageSequenceWriter(com_path, 'png')
 		if context.scene.MATTECREATOR_HYPERPARAM_outputPha:
-			pha_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'pha'), 'jpg')
+			pha_path = os.path.join(output_dir, 'pha')
+			pha_writer = MATTECREATOR_CLASS_imageSequenceWriter(pha_path, 'png')
 		if context.scene.MATTECREATOR_HYPERPARAM_outputFgr:
-			fgr_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'fgr'), 'jpg')
+			fgr_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'fgr'), 'png')
 		if context.scene.MATTECREATOR_HYPERPARAM_outputErr:
-			err_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'err'), 'jpg')
+			err_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'err'), 'png')
 		if context.scene.MATTECREATOR_HYPERPARAM_outputRef:
-			ref_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'ref'), 'jpg')
+			ref_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'ref'), 'png')
 
 	bpy.ops.wm.console_toggle()
 
+	# Debug Printing
+
+	print(f'Using Device: {device}')
+	print(f'Using Checkpoint: {model_path}')
+	print(f'Starting Writers...')
+
 	with torch.no_grad():
 		for idx, input_batch in enumerate(DataLoader(dataset, batch_size=1, pin_memory=True)):
+				
+				# Safety Check since apparently we can't break&continue the inferrence loop...
+				# Only check on the first iteration (duh)
+			if idx == 0 and context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'image_sequences' and os.listdir(com_path):
+				self.report({'WARNING'}, 'Comp Output Folder is not empty, cancelling.')
+				bpy.ops.wm.console_toggle()
+				return{'CANCELLED'}
+			if idx == 0 and context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'image_sequences' and os.listdir(pha_path):
+				self.report({'WARNING'}, 'Alpha Output Folder is not empty, cancelling.')
+				bpy.ops.wm.console_toggle()
+				return{'CANCELLED'}
+
 			src, bgr = input_batch
+
 			tgt_bgr = torch.tensor([120/255, 255/255, 155/255], device=device).view(1, 3, 1, 1)
 
 			src = src.to(precision).to(device, non_blocking=True)
-			bgr = bgr.to(precision).to(device, non_blocking=True)
+			bgr = bgr.to(precision).to(device, non_blocking=True)			
 
 			if context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingbase':
 				pha, fgr, err, _ = model(src, bgr)
@@ -260,7 +306,7 @@ def MATTECREATOR_FN_extractMatte(self, context):
 				pha, fgr, _, _, err, ref = model(src, bgr)
 			elif context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingbm':
 				pha, fgr = model(src, bgr)
-
+			
 			# Write Batches Out
 			if context.scene.MATTECREATOR_HYPERPARAM_outputCom:
 				if context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'video':
@@ -282,6 +328,13 @@ def MATTECREATOR_FN_extractMatte(self, context):
 
 			print(f'Writing frame... {idx} / {vid.frame_count}')	
 
+			#DEBUG--------------------------------------------------------------------------------------------------
+			# Stops loop after 24 frames (1 second)
+			#if idx > 24:
+			#	bpy.ops.wm.console_toggle()	
+			#	return{'FINISHED'}
+			#DEBUG--------------------------------------------------------------------------------------------------
+						
 	print('Finished writing.')
 	bpy.ops.wm.console_toggle()	
 
@@ -351,15 +404,29 @@ class MATTECREATOR_OT_loadCleanPlateWithFileBrowser(bpy.types.Operator, ImportHe
 		return {'FINISHED'}	
 
 class MATTECREATOR_OT_extractMatte(bpy.types.Operator):
-	# Hello world!
+	# Extract matte.
 	bl_idname = 'mattecreator.extract_matte'
 	bl_label = ''
 	bl_options = {'REGISTER', 'UNDO'}
-	bl_description = 'Run Neural forward pass to extract and save Matte.'
+	bl_description = 'Run Neural forward pass to extract and save Matte'
 
 	def execute(self, context):		
+		if MATTECREATOR_MISSING_DEPENDENCIES:
+			self.report({'ERROR'}, 'Missing dependencies, please ensure all Libraries are installed correctly.')
+			return{'CANCELLED'}
 		MATTECREATOR_FN_extractMatte(self, context)		
 		return {'FINISHED'}	
+
+class MATTECREATOR_OT_openHelpInConsole(bpy.types.Operator):
+	# Opens a Console and prints helpful information.
+	bl_idname = 'mattecreator.open_help_in_console'
+	bl_label = ''
+	bl_options = {'REGISTER', 'UNDO'}
+	bl_description = 'Opens a Console and prints helpful information'
+
+	def execute(self, context):	
+		MATTECREATOR_FN_openHelpInConsole()	
+		return {'FINISHED'}
 
 
 class MATTECREATOR_CLASS_videoWriter:
@@ -379,7 +446,7 @@ class MATTECREATOR_CLASS_imageSequenceWriter:
 		self.path = path
 		self.extension = extension
 		self.index = 0
-		os.makedirs(path)
+		os.makedirs(path, exist_ok=True)
 
 	def add_batch(self, frames):
 		Thread(target=self._add_batch, args=(frames, self.index)).start()
@@ -546,6 +613,10 @@ class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
 		row.label(text='Download Pre-Trained Models')
 		row.operator(MATTECREATOR_OT_downloadModels.bl_idname, text='Download', icon_value=727)
 
+		row = layout.row()
+		row.label(text='Report an Issue')
+		row.operator(MATTECREATOR_OT_openHelpInConsole.bl_idname, text='', icon='QUESTION')
+
 class MATTECREATOR_PT_panelMatting(bpy.types.Panel):
 	bl_label = 'Matting'
 	bl_idname = 'MATTECREATOR_PT_panelMatting'
@@ -690,7 +761,7 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 #--------------------------------------------------------------
 
 classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelInitialSetup, MATTECREATOR_PT_panelMatting, MATTECREATOR_PT_panelAdvanced)
-classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages, MATTECREATOR_OT_downloadModels, MATTECREATOR_OT_loadVideoWithFileBrowser, MATTECREATOR_OT_loadCleanPlateWithFileBrowser)
+classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages, MATTECREATOR_OT_downloadModels, MATTECREATOR_OT_loadVideoWithFileBrowser, MATTECREATOR_OT_loadCleanPlateWithFileBrowser, MATTECREATOR_OT_openHelpInConsole)
 
 def register():
 
