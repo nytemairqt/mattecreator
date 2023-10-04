@@ -360,7 +360,7 @@ class MATTECREATOR_OT_downloadModels(bpy.types.Operator):
 
 class MATTECREATOR_OT_loadVideoWithFileBrowser(bpy.types.Operator, ImportHelper):
 	bl_idname = 'mattecreator.load_video_with_file_browser'
-	bl_label = ''
+	bl_label = 'Open Video'
 	bl_options = {'REGISTER', 'UNDO'}
 	bl_description = 'Open a File Browser to select a Video File.'
 
@@ -380,7 +380,7 @@ class MATTECREATOR_OT_loadVideoWithFileBrowser(bpy.types.Operator, ImportHelper)
 
 class MATTECREATOR_OT_loadCleanPlateWithFileBrowser(bpy.types.Operator, ImportHelper):
 	bl_idname = 'mattecreator.load_clean_plate_with_file_browser'
-	bl_label = ''
+	bl_label = 'Open Image'
 	bl_options = {'REGISTER', 'UNDO'}
 	bl_description = 'Open a File Browser to select a Background Image.'
 
