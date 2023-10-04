@@ -43,6 +43,7 @@ bl_info = {
 #--------------------------------------------------------------
 
 MATTECREATOR_MISSING_DEPENDENCIES = True
+MATTECREATOR_DEBUG_MODE = True
 
 import os
 import bpy
@@ -175,7 +176,7 @@ def MATTECREATOR_FN_openHelpInConsole():
 	print('(Close this window via Window -> Toggle System Console in Blender.)')
 
 def MATTECREATOR_FN_extractMatte(self, context):
-	VIDEO_RESIZE = None
+	#VIDEO_RESIZE = None
 
 	print('Starting BackgroundMattingV2...')
 
@@ -224,12 +225,17 @@ def MATTECREATOR_FN_extractMatte(self, context):
 
 	model = torch.jit.load(model_path)
 
-	if context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingrefine':
-		model.backbone_scale = bpy.context.scene.MATTECREATOR_HYPERPARAM_modelBackboneScale
-		model.refine_mode = bpy.context.scene.MATTECREATOR_HYPERPARAM_modelRefineMode
-		model.refine_sample_pixels = bpy.context.scene.MATTECREATOR_HYPERPARAM_refineSamplePixels
-		model.refine_threshold = bpy.context.scene.MATTECREATOR_HYPERPARAM_refineThreshold
-		model.refine_kernel_size = bpy.context.scene.MATTECREATOR_HYPERPARAM_refineKernelSize		
+	#context.scene.MATTECREATOR_HYPERPARAM_modelType = 'mattingrefine'
+
+	model.backbone_scale = bpy.context.scene.MATTECREATOR_HYPERPARAM_modelBackboneScale
+	model.refine_mode = bpy.context.scene.MATTECREATOR_HYPERPARAM_modelRefineMode
+	model.refine_sample_pixels = bpy.context.scene.MATTECREATOR_HYPERPARAM_refineSamplePixels
+	model.refine_threshold = bpy.context.scene.MATTECREATOR_HYPERPARAM_refineThreshold
+
+	if bpy.context.scene.MATTECREATOR_HYPERPARAM_refineKernelSize == '1':
+		model.refine_kernel_size = 1
+	else:
+		model.refine_kernel_size = 3
 
 	model = model.to(device).eval()
 
@@ -237,26 +243,17 @@ def MATTECREATOR_FN_extractMatte(self, context):
 	vid = MATTECREATOR_CLASS_videoDataset(video_path)
 	bgr = MATTECREATOR_FN_loadImage(image_path)
 
-	dataset = MATTECREATOR_CLASS_zipDataset([vid, bgr], transforms=MATTECREATOR_CLASS_pairCompose([
-    MATTECREATOR_CLASS_pairApply(T.Resize(VIDEO_RESIZE[::-1]) if VIDEO_RESIZE else nn.Identity()),
-    MATTECREATOR_CLASS_homographicAlignment() if context.scene.MATTECREATOR_HYPERPARAM_preprocessAlignment else MATTECREATOR_CLASS_pairApply(nn.Identity()),
-    MATTECREATOR_CLASS_pairApply(T.ToTensor())]))
+	dataset = MATTECREATOR_CLASS_zipDataset([vid, bgr], transforms=MATTECREATOR_CLASS_pairCompose([MATTECREATOR_CLASS_pairApply(nn.Identity()), MATTECREATOR_CLASS_pairApply(nn.Identity()), MATTECREATOR_CLASS_pairApply(T.ToTensor())]))
 
 	# Instantiate Writers
 	if context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'video':
-		h = vid.height # Will anyone ever need resizing? Really?
+		h = vid.height 
 		w = vid.width
 
 		if context.scene.MATTECREATOR_HYPERPARAM_outputCom:
 			com_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'com.mp4'), vid.frame_rate, w, h)
 		if context.scene.MATTECREATOR_HYPERPARAM_outputPha:
 			pha_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'pha.mp4'), vid.frame_rate, w, h)
-		if context.scene.MATTECREATOR_HYPERPARAM_outputFgr:
-			fgr_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'fgr.mp4'), vid.frame_rate, w, h)
-		if context.scene.MATTECREATOR_HYPERPARAM_outputErr:
-			err_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'err.mp4'), vid.frame_rate, w, h)
-		if context.scene.MATTECREATOR_HYPERPARAM_outputRef:
-			ref_writer = MATTECREATOR_CLASS_videoWriter(os.path.join(output_dir, 'ref.mp4'), vid.frame_rate, w, h)
 	else:
 		if context.scene.MATTECREATOR_HYPERPARAM_outputCom:
 			com_path = os.path.join(output_dir, 'com')
@@ -264,12 +261,6 @@ def MATTECREATOR_FN_extractMatte(self, context):
 		if context.scene.MATTECREATOR_HYPERPARAM_outputPha:
 			pha_path = os.path.join(output_dir, 'pha')
 			pha_writer = MATTECREATOR_CLASS_imageSequenceWriter(pha_path, 'png')
-		if context.scene.MATTECREATOR_HYPERPARAM_outputFgr:
-			fgr_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'fgr'), 'png')
-		if context.scene.MATTECREATOR_HYPERPARAM_outputErr:
-			err_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'err'), 'png')
-		if context.scene.MATTECREATOR_HYPERPARAM_outputRef:
-			ref_writer = MATTECREATOR_CLASS_imageSequenceWriter(os.path.join(output_dir, 'ref'), 'png')
 
 	bpy.ops.wm.console_toggle()
 
@@ -304,12 +295,8 @@ def MATTECREATOR_FN_extractMatte(self, context):
 			src = src.to(precision).to(device, non_blocking=True)
 			bgr = bgr.to(precision).to(device, non_blocking=True)			
 
-			if context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingbase':
-				pha, fgr, err, _ = model(src, bgr)
-			elif context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingrefine':
-				pha, fgr, _, _, err, ref = model(src, bgr)
-			elif context.scene.MATTECREATOR_HYPERPARAM_modelType == 'mattingbm':
-				pha, fgr = model(src, bgr)
+			# Always using mattingrefine
+			pha, fgr, _, _, err, ref = model(src, bgr)
 			
 			# Write Batches Out
 			if context.scene.MATTECREATOR_HYPERPARAM_outputCom:
@@ -323,20 +310,14 @@ def MATTECREATOR_FN_extractMatte(self, context):
 					com_writer.add_batch(com)
 			if context.scene.MATTECREATOR_HYPERPARAM_outputPha:
 				pha_writer.add_batch(pha)
-			if context.scene.MATTECREATOR_HYPERPARAM_outputFgr:
-				fgr_writer.add_batch(fgr)
-			if context.scene.MATTECREATOR_HYPERPARAM_outputErr:
-				err_writer.add_batch(F.interpolate(err, src.shape[2:], mode='bilinear', align_corners=False))
-			if context.scene.MATTECREATOR_HYPERPARAM_outputRef:
-				ref_writer.add_batch(F.interpolate(ref, src.shape[2:], mode='nearest'))
 
 			print(f'Writing frame... {idx} / {vid.frame_count}')	
 
 			#DEBUG--------------------------------------------------------------------------------------------------
 			# Stops loop after 24 frames (1 second)
-			#if idx > 24:
-			#	bpy.ops.wm.console_toggle()	
-			#	return{'FINISHED'}
+			if MATTECREATOR_DEBUG_MODE and idx > 24:
+				bpy.ops.wm.console_toggle()	
+				return{'FINISHED'}
 			#DEBUG--------------------------------------------------------------------------------------------------
 						
 	print('Finished writing.')
@@ -546,42 +527,6 @@ class MATTECREATOR_CLASS_pairApply:
 	def __call__(self, *x):
 		return [self.transforms(xi) for xi in x]
 
-class MATTECREATOR_CLASS_homographicAlignment:    
-	def __init__(self):
-		self.detector = cv2.ORB_create()
-		self.matcher = cv2.DescriptorMatcher_create(cv2.DESCRIPTOR_MATCHER_BRUTEFORCE)
-
-	def __call__(self, src, bgr):
-		src = np.asarray(src)
-		bgr = np.asarray(bgr)
-
-		keypoints_src, descriptors_src = self.detector.detectAndCompute(src, None)
-		keypoints_bgr, descriptors_bgr = self.detector.detectAndCompute(bgr, None)
-
-		matches = self.matcher.match(descriptors_bgr, descriptors_src, None)
-		matches.sort(key=lambda x: x.distance, reverse=False)
-		num_good_matches = int(len(matches) * 0.15)
-		matches = matches[:num_good_matches]
-
-		points_src = np.zeros((len(matches), 2), dtype=np.float32)
-		points_bgr = np.zeros((len(matches), 2), dtype=np.float32)
-		for i, match in enumerate(matches):
-			points_src[i, :] = keypoints_src[match.trainIdx].pt
-			points_bgr[i, :] = keypoints_bgr[match.queryIdx].pt
-
-		H, _ = cv2.findHomography(points_bgr, points_src, cv2.RANSAC)
-
-		h, w = src.shape[:2]
-		bgr = cv2.warpPerspective(bgr, H, (w, h))
-		msk = cv2.warpPerspective(np.ones((h, w)), H, (w, h))
-
-		bgr[msk != 1] = src[msk != 1]
-
-		src = PIL.Image.fromarray(src)
-		bgr = PIL.Image.fromarray(bgr)
-
-		return src, bgr		
-
 #--------------------------------------------------------------
 # Interface
 #--------------------------------------------------------------
@@ -733,10 +678,6 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 	def draw(self, context):
 		layout = self.layout		
 
-		# Model Type
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_modelType', text='Model')
-
 		# Model Backbone Scale
 		row = layout.row()
 		row.label(text='Backbone Scale: ')
@@ -757,14 +698,6 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 		# Refine Kernel Size
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_refineKernelSize', text='Kernel Size')
-
-		# Preprocess Alignment
-		row = layout.row()
-		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_preprocessAlignment', text='Preprocess Alignment')
-
-		# Video Target BGR
-		#row = layout.row()
-		#row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_videoTargetBGR', text='Video Target BGR')
 
 		
 	
@@ -795,35 +728,21 @@ def register():
 	bpy.types.Scene.MATTECREATOR_VAR_outputDir = bpy.props.StringProperty(name='', default='', subtype='DIR_PATH')
 		
 	# Hyperparameters
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelType', items=[('mattingbase', 'mattingbase', ''), ('mattingrefine', 'mattingrefine', '')])
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackbone = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelBackbone', items=[('resnet101', 'resnet101', ''), ('resnet50', 'resnet50', ''), ('mobilenetv2', 'mobilenetv2', '')]) 
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale = bpy.props.FloatProperty(name='MATTECREATOR_HYPERPARAM_modelBackboneScale', soft_min=0.1, soft_max=0.5, default=0.25)
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelCheckpoint = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_modelCheckpoint') # Replace with file selector with filter glob, need to make persistent too
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelRefineMode = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelRefineMode', items=[('full', 'full', ''), ('sampling', 'sampling', ''), ('thresholding', 'thresholding', '')])
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineSamplePixels = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_refineSamplePixels', soft_min=10000, soft_max=320000, default=80000)	
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineThreshold = bpy.props.FloatProperty(name='MATTECREATOR_HYPERPARAM_refineThreshold', soft_min=0.1, soft_max=0.9, default=0.7)
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineKernelSize = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_refineKernelSize', soft_min=2, soft_max=5, default=3)
-	
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoBGR = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_videoBGR') # Replace with file picker
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoTargetBGR = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_videoTargetBGR') # Replace with file picker
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineKernelSize = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_refineKernelSize', items=[('1', '1', ''), ('3', '3', '')], default='3') 
 
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_device = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_device', items=[('cuda', 'cuda (GPU)', ''), ('cpu', 'cpu', '')], default='cuda')
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_preprocessAlignment = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_preprocessAlignment', default=False)
 
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputDirectory = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_outputDirectory')
 
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputCom = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputCom', default=True)
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputPha = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputPha', default=False)
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFgr = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputFgr', default=False)
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputErr = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputErr', default=False)
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputRef = bpy.props.BoolProperty(name='MATTECREATOR_HYPERPARAM_outputRef', default=False)
 
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFormat = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_outputFormat', items=[('video', 'Video', ''), ('image_sequences', 'Image Sequence', '')], default='video')
-
-	# Possibly Temp
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeX = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_resizeX')
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeY = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_resizeY')	
-
 
 def unregister():
 
@@ -841,8 +760,6 @@ def unregister():
 	del bpy.types.Scene.MATTECREATOR_VAR_outputDir2
 
 	# Hyperparamaters
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelType
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackbone
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelCheckpoint
 
@@ -851,25 +768,14 @@ def unregister():
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineThreshold
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineKernelSize
 
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoSource
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoBGR
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_videoTargetBGR
-
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_device
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_preprocessAlignment
 
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputDirectory 
 
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputCom
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputPha
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFgr
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputErr
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputRef
 
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFormat
-
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeX
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_resizeY
 
 if __name__ == '__main__':
 	register()
