@@ -43,7 +43,7 @@ bl_info = {
 #--------------------------------------------------------------
 
 MATTECREATOR_MISSING_DEPENDENCIES = True
-MATTECREATOR_DEBUG_MODE = True
+MATTECREATOR_DEBUG_MODE = False
 
 import os
 import bpy
@@ -176,7 +176,6 @@ def MATTECREATOR_FN_openHelpInConsole():
 	print('(Close this window via Window -> Toggle System Console in Blender.)')
 
 def MATTECREATOR_FN_extractMatte(self, context):
-	#VIDEO_RESIZE = None
 
 	print('Starting BackgroundMattingV2...')
 
@@ -224,8 +223,6 @@ def MATTECREATOR_FN_extractMatte(self, context):
 		precision = torch.float16
 
 	model = torch.jit.load(model_path)
-
-	#context.scene.MATTECREATOR_HYPERPARAM_modelType = 'mattingrefine'
 
 	model.backbone_scale = bpy.context.scene.MATTECREATOR_HYPERPARAM_modelBackboneScale
 	model.refine_mode = bpy.context.scene.MATTECREATOR_HYPERPARAM_modelRefineMode
@@ -423,7 +420,6 @@ class MATTECREATOR_OT_reportAnIssue(bpy.types.Operator):
 	def execute(self, context):
 		webbrowser.open('https://forms.gle/Gg8THKQFF73KtzS16')
 		return{'FINISHED'}
-
 
 class MATTECREATOR_CLASS_videoWriter:
 	def __init__(self, path, frame_rate, width, height):
@@ -698,11 +694,6 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 		# Refine Kernel Size
 		row = layout.row()
 		row.prop(context.scene, 'MATTECREATOR_HYPERPARAM_refineKernelSize', text='Kernel Size')
-
-		
-	
-
-
 		
 
 #--------------------------------------------------------------
@@ -728,8 +719,7 @@ def register():
 	bpy.types.Scene.MATTECREATOR_VAR_outputDir = bpy.props.StringProperty(name='', default='', subtype='DIR_PATH')
 		
 	# Hyperparameters
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale = bpy.props.FloatProperty(name='MATTECREATOR_HYPERPARAM_modelBackboneScale', soft_min=0.1, soft_max=0.5, default=0.25)
-	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelCheckpoint = bpy.props.StringProperty(name='MATTECREATOR_HYPERPARAM_modelCheckpoint') # Replace with file selector with filter glob, need to make persistent too
+	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale = bpy.props.FloatProperty(name='MATTECREATOR_HYPERPARAM_modelBackboneScale', soft_min=0.1, soft_max=0.5, default=0.25)	
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelRefineMode = bpy.props.EnumProperty(name='MATTECREATOR_HYPERPARAM_modelRefineMode', items=[('full', 'full', ''), ('sampling', 'sampling', ''), ('thresholding', 'thresholding', '')])
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineSamplePixels = bpy.props.IntProperty(name='MATTECREATOR_HYPERPARAM_refineSamplePixels', soft_min=10000, soft_max=320000, default=80000)	
 	bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineThreshold = bpy.props.FloatProperty(name='MATTECREATOR_HYPERPARAM_refineThreshold', soft_min=0.1, soft_max=0.9, default=0.7)
@@ -757,12 +747,9 @@ def unregister():
 	del bpy.types.Scene.MATTECREATOR_VAR_cleanPlate
 	del bpy.types.Scene.MATTECREATOR_VAR_outputDir
 	del bpy.types.Scene.MATTECREATOR_VAR_modelPath
-	del bpy.types.Scene.MATTECREATOR_VAR_outputDir2
 
 	# Hyperparamaters
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelBackboneScale
-	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelCheckpoint
-
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_modelRefineMode
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineSamplePixels
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_refineThreshold
@@ -771,10 +758,8 @@ def unregister():
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_device
 
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputDirectory 
-
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputCom
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputPha
-
 	del bpy.types.Scene.MATTECREATOR_HYPERPARAM_outputFormat
 
 if __name__ == '__main__':
