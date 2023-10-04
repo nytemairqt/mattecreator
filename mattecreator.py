@@ -261,6 +261,18 @@ def MATTECREATOR_FN_extractMatte(self, context):
 
 	bpy.ops.wm.console_toggle()
 
+	# Check for Existing Files
+
+	try:
+		com_path_has_files = os.listdir(com_path)
+	except: 
+		com_path_has_files = False
+
+	try:
+		pha_path_has_files = os.listdir(pha_path)
+	except:
+		pha_path_has_files = False 
+
 	# Debug Printing
 
 	print('')
@@ -276,11 +288,11 @@ def MATTECREATOR_FN_extractMatte(self, context):
 				
 				# Safety Check since apparently we can't break&continue the inferrence loop...
 				# Only check on the first iteration (duh)
-			if idx == 0 and context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'image_sequences' and os.listdir(com_path):
+			if idx == 0 and context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'image_sequences' and com_path_has_files:
 				self.report({'WARNING'}, 'Comp Output Folder is not empty, cancelling.')
 				bpy.ops.wm.console_toggle()
 				return{'CANCELLED'}
-			if idx == 0 and context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'image_sequences' and os.listdir(pha_path):
+			if idx == 0 and context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'image_sequences' and pha_path_has_files:
 				self.report({'WARNING'}, 'Alpha Output Folder is not empty, cancelling.')
 				bpy.ops.wm.console_toggle()
 				return{'CANCELLED'}
