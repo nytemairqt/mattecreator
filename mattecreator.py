@@ -433,6 +433,16 @@ class MATTECREATOR_OT_reportAnIssue(bpy.types.Operator):
 		webbrowser.open('https://forms.gle/Gg8THKQFF73KtzS16')
 		return{'FINISHED'}
 
+class MATTECREATOR_OT_supportPatreon(bpy.types.Operator):
+	# Support me on Patreon <3
+	bl_idname = 'mattecreator.support_patreon'
+	bl_label = ''
+	bl_options = {'REGISTER', 'UNDO'}
+	bl_description = 'Support me on Patreon <3'
+
+	def execute(self, context):
+		webbrowser.open('https://www.patreon.com/SceneFiller')
+
 class MATTECREATOR_CLASS_videoWriter:
 	def __init__(self, path, frame_rate, width, height):
 		self.out = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*'mp4v'), frame_rate, (width, height))
@@ -487,7 +497,7 @@ if not MATTECREATOR_MISSING_DEPENDENCIES:
 			if not ret:
 				raise IndexError(f'Idx: {idx} out of length: {len(self)}')
 			img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-			#img = PIL.Image.fromarray(img) #DO I NEED THIS????
+			#img = PIL.Image.fromarray(img) #Not sure why this is here...
 			if self.transforms:
 				img = self.transforms(img)
 			return img
@@ -585,6 +595,7 @@ class MATTECREATOR_PT_panelInitialSetup(bpy.types.Panel):
 		row.label(text='Support:')
 		row.operator(MATTECREATOR_OT_openHelpInConsole.bl_idname, text='Common Issues', icon='QUESTION')
 		row.operator(MATTECREATOR_OT_reportAnIssue.bl_idname, text='Open a Ticket', icon='GREASEPENCIL')
+		row.operator(MATTECREATOR_OT_supportPatreon.bl_idname, text='', icon='EVENT_P')
 
 class MATTECREATOR_PT_panelMatting(bpy.types.Panel):
 	bl_label = 'Matting'
@@ -713,7 +724,7 @@ class MATTECREATOR_PT_panelAdvanced(bpy.types.Panel):
 #--------------------------------------------------------------
 
 classes_interface = (MATTECREATOR_PT_panelMain, MATTECREATOR_PT_panelInitialSetup, MATTECREATOR_PT_panelMatting, MATTECREATOR_PT_panelAdvanced)
-classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages, MATTECREATOR_OT_downloadModels, MATTECREATOR_OT_loadVideoWithFileBrowser, MATTECREATOR_OT_loadCleanPlateWithFileBrowser, MATTECREATOR_OT_openHelpInConsole, MATTECREATOR_OT_reportAnIssue)
+classes_functionality = (MATTECREATOR_OT_extractMatte, MATTECREATOR_OT_installPackages, MATTECREATOR_OT_downloadModels, MATTECREATOR_OT_loadVideoWithFileBrowser, MATTECREATOR_OT_loadCleanPlateWithFileBrowser, MATTECREATOR_OT_openHelpInConsole, MATTECREATOR_OT_reportAnIssue, MATTECREATOR_OT_supportPatreon)
 
 def register():
 
