@@ -295,7 +295,12 @@ def MATTECREATOR_FN_extractMatte(self, context):
 			if idx == 0 and context.scene.MATTECREATOR_HYPERPARAM_outputFormat == 'image_sequences' and pha_path_has_files:
 				self.report({'WARNING'}, 'Alpha Output Folder is not empty, cancelling.')
 				bpy.ops.wm.console_toggle()
-				return{'CANCELLED'}
+				return{'CANCELLED'}			
+			if idx == vid.frame_mismatch: # Prevent len read errors from opencv bug with some videos
+				print(f'Potential opencv frame miscalculation, stopping to prevent len read errors...')
+				print(f'Finishing...')
+				bpy.ops.wm.console_toggle()
+				return{'FINISHED'}
 
 			src, bgr = input_batch
 
@@ -483,21 +488,26 @@ if not MATTECREATOR_MISSING_DEPENDENCIES:
 			self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 			self.frame_rate = self.cap.get(cv2.CAP_PROP_FPS)
 			self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+			self.frame_mismatch = -1
 
 		def __len__(self):
 			return self.frame_count
 
 		def __getitem__(self, idx):
-			if isinstance(idx, slice):
+			if isinstance(idx, slice):				
 				return [self[i] for i in range(*idx.indices(len(self)))]
 
 			if self.cap.get(cv2.CAP_PROP_POS_FRAMES) != idx:
 				self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+
 			ret, img = self.cap.read()
 			if not ret:
-				raise IndexError(f'Idx: {idx} out of length: {len(self)}')
+				self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx-1) # Go back to previous frame
+				_, img = self.cap.read() 
+				self.frame_mismatch = idx
+				return img # return previous image, prevents len read error due to opencv bug
 			img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-			#img = PIL.Image.fromarray(img) #Not sure why this is here...
+			#img = PIL.Image.fromarray(img) #Not sure why this is here... doesnt fix the out of range index error...
 			if self.transforms:
 				img = self.transforms(img)
 			return img
